@@ -94,9 +94,9 @@ class SearchService
      * @return $this
      * 设置聚合
      */
-    public function setAggi(array $aggi): self
+    public function groupBy(array $aggi): self
     {
-        $this->aggiData = $this->aggiData ? array_merge($this->aggiData, $aggi) : $aggi;
+        $this->aggiData = $aggi;
         return $this;
     }
 
@@ -379,24 +379,6 @@ class SearchService
     }
 
     /**
-     * @param $name
-     * @param $value
-     * @param $distance
-     * @return $this
-     * 设置去重方法
-     */
-    public function distance($name, $value, $distance): SearchService
-    {
-        $this->params['body']['query']['bool']['must'][]['bool']['filter'][] = [
-            "geo_distance" => [
-                $name => $value,
-                "distance" => $distance,
-            ]
-        ];
-        return $this;
-    }
-
-    /**
      * 设置 OR 筛选项
      * search 搜索词项 设计拆词查询 词权重处理
      * filter 不涉及分词拆词 单纯筛选
@@ -507,7 +489,6 @@ class SearchService
     }
 
     /**
-     * @param bool $isJsonToArray
      * @return array
      * 获取搜索列表
      * return [
@@ -515,20 +496,22 @@ class SearchService
      * 'total' => int
      * ];
      */
-    public function getSearchList($isJsonToArray = false): array
+    public function getSearchList(): array
     {
         $result = $this->getSearchResult();
         $returnData = [
             'list' => array_pluck($result['hits']['hits'], '_source'),
-            'total' => (int)$result['hits']['total']
+            'total' => (int)$result['hits']['total'],
+            'groupList' => []
         ];
-        if ($isJsonToArray) {
-            foreach ($returnData['list'] as &$datum) {
-                foreach ($datum as $k => $v) {
-                    if (strpos($v, ':') !== false) {
-                        $datum[$k] = json_decode($v, true);
-                    }
-                }
+        //---处理分组数据
+        if (isset($result['aggregations']) && $bucketSet = $result['aggregations']) {
+            $bucketName = array_key_first($bucketSet);
+            $bucketChildName = array_key_first($this->aggiData[$bucketName]['aggs']);
+            $bucketList = array_pluck($result['aggregations'][$bucketName]['buckets'], $bucketChildName);
+            foreach ($bucketList as $item) {
+                $data['group_num'] = $item['hits']['total'];
+                $returnData['groupList'][] = array_merge($data, $item['hits']['hits'][0]['_source']);
             }
         }
         return $returnData;
