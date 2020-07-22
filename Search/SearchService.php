@@ -94,12 +94,44 @@ class SearchService
      * @return $this
      * 设置聚合
      */
-    public function groupBy(array $aggi): self
+    public function aggs(array $aggi): self
     {
         if (empty($aggi)) {
             return $this;
         }
+        if($this->aggiData)
+        {
+            throw new \RuntimeException('aggs already exists');
+        }
         $this->aggiData = $aggi;
+        return $this;
+    }
+
+    /**
+     * @param string $field
+     * @param int $returnCount
+     * @return $this
+     * 简单分组查询
+     */
+    public function groupBy(string $field,$returnCount = 10): SearchService
+    {
+        $this->aggiData = [
+            'group_by_'.$field=>[
+                "group_by_{$field}_list" => array(
+                    "terms" => array(
+                        "field" => $field,
+                        "size" => $returnCount,
+                    ),
+                    "aggs" => array(
+                        'my_top_hits' => array(
+                            "top_hits" => array(
+                                "size" => 1
+                            )
+                        )
+                    )
+                )
+            ]
+        ];
         return $this;
     }
 
