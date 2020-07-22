@@ -506,12 +506,26 @@ class SearchService
         ];
         //---处理分组数据
         if (isset($result['aggregations']) && $bucketSet = $result['aggregations']) {
+
             $bucketName = array_key_first($bucketSet);
             $bucketChildName = array_key_first($this->aggiData[$bucketName]['aggs']);
             $bucketList = array_pluck($result['aggregations'][$bucketName]['buckets'], $bucketChildName);
+            $data = [];
+            $count = 1;
             foreach ($bucketList as $item) {
-                $data['group_num'] = $item['hits']['total'];
-                $returnData['groupList'][] = array_merge($data, $item['hits']['hits'][0]['_source']);
+                $key = 0;
+                $count = count($item['hits']['hits']);
+                if ($count === 1) {
+                    $returnData['groupList'][] = array_merge(['group_num' => $item['hits']['total']], $item['hits']['hits'][$key]['_source']);
+                    continue;
+                }
+                while ($key < $count) {
+                    $data[] = array_merge(['group_num' => $item['hits']['total']], $item['hits']['hits'][$key]['_source']);
+                    ++$key;
+                }
+            }
+            if (empty($returnData['groupList'])) {
+                $returnData['groupList'] = array_chunk($data, $count);
             }
         }
         return $returnData;
