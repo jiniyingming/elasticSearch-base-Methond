@@ -3,6 +3,7 @@
 namespace App\Services\Search;
 
 use Elasticsearch\Client, Elasticsearch\ClientBuilder, Exception;
+use http\Exception\RuntimeException;
 
 /**
  * Class SearchService
@@ -96,6 +97,9 @@ class SearchService
      */
     public function groupBy(array $aggi): self
     {
+        if (empty($aggi)) {
+            return $this;
+        }
         $this->aggiData = $aggi;
         return $this;
     }
@@ -131,8 +135,7 @@ class SearchService
      */
     public function outPutJson(): void
     {
-        echo json_encode($this->setParams());
-        exit;
+        exit(json_encode($this->setParams(), JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
     }
 
     /**
@@ -158,6 +161,9 @@ class SearchService
      */
     public function isNot(array $notArray = []): self
     {
+        if (empty($notArray)) {
+            return $this;
+        }
         $this->isNotData = $notArray;
         return $this;
     }
@@ -171,8 +177,8 @@ class SearchService
     public function offset(int $page = 1, int $limit = 10): self
     {
         $page = $page <= 0 ? 1 : $page;
-        $this->pageSize = $limit;
-        $this->offset = $limit * ($page - 1);
+        $this->pageSize = (int)$limit;
+        $this->offset = (int)($limit * ($page - 1));
         return $this;
     }
 
@@ -183,6 +189,9 @@ class SearchService
      */
     public function isMust(array $mustArray = []): self
     {
+        if (empty($mustArray)) {
+            return $this;
+        }
         $this->isMustData = !empty($this->isMustData) ? array_merge($this->isMustData, $mustArray) : $mustArray;
         return $this;
     }
@@ -194,6 +203,9 @@ class SearchService
      */
     public function _source(array $_source): self
     {
+        if (empty($_source)) {
+            return $this;
+        }
         $this->_source = $_source;
         return $this;
     }
@@ -442,6 +454,12 @@ class SearchService
      */
     public function shouldWhere(array $shouldWhere = []): self
     {
+        if (empty($shouldWhere)) {
+            return $this;
+        }
+        if (!isset($shouldWhere['search'], $shouldWhere['filter'])) {
+            throw new \RuntimeException('Not found search or filter');
+        }
         $this->shouldWhere = $shouldWhere;
         return $this;
     }
@@ -453,6 +471,9 @@ class SearchService
      */
     public function match(array $keywordArray = []): self
     {
+        if (empty($keywordArray)) {
+            return $this;
+        }
         $this->mathWhere = $this->mathWhere ? array_merge($this->mathWhere, $keywordArray) : $keywordArray;
         return $this;
     }
@@ -462,9 +483,9 @@ class SearchService
      * @return $this
      * 设置搜索匹配最小数量
      */
-    public function setMinimumMatch($number): self
+    public function setMinimumMatch($number = 1): self
     {
-        $this->minimum_should_match = $number;
+        $this->minimum_should_match = (int)$number;
         return $this;
     }
 
@@ -582,4 +603,32 @@ class SearchService
         }
         return [];
     }
+
+    /**
+     * @param int $id
+     * @return array|mixed
+     * 查询单个id数据
+     */
+    public function getOneByEs($id = 0)
+    {
+        if ($id < 1) {
+            return [];
+        }
+        $params = [
+            'index' => $this->index,
+            'type' => $this->type,
+            'id' => (int)$id
+        ];
+        if (!empty($this->_source)) {
+            $params['_source'] = $this->_source;
+        }
+        try {
+            $response = $this->client->get($params);
+        } catch (\exception $e) {
+            return [];
+        }
+        $response['_source']['id'] = $response['_id'];
+        return $response['_source'];
+    }
+
 }
