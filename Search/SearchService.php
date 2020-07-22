@@ -3,7 +3,6 @@
 namespace App\Services\Search;
 
 use Elasticsearch\Client, Elasticsearch\ClientBuilder, Exception;
-use http\Exception\RuntimeException;
 
 /**
  * Class SearchService
@@ -148,7 +147,7 @@ class SearchService
     {
         $keyword = $this->checkKeyword($searchWord);
         if (!empty($keyword)) {
-            $this->searchWhere['query'] = $this->checkKeyword($searchWord);
+            $this->searchWhere['query'] = $keyword;
             $this->searchWhere['query_field'] = $queryField;
         }
         return $this;
@@ -384,8 +383,13 @@ class SearchService
         if (is_array($searchValue)) {
             if (count($searchValue) === 2) {
                 [$searchValue, $this->boost] = $searchValue;
+            }else{
+                $key = array_key_first($searchValue);
+                if(is_string($key))
+                {
+                    $searchValue = $this->setBoostVal($searchValue[$key]);
+                }
             }
-            $searchValue = $searchValue[0] ?? '';
         }
         return $this->checkKeyword($searchValue);
     }
@@ -399,6 +403,8 @@ class SearchService
     {
 
         if (!empty($this->shouldWhere)) {
+            $search = [];
+            $filter = [];
             foreach ($this->shouldWhere as $shouldType => $shouldParams) {
                 switch ($shouldType) {
                     case 'search':
@@ -407,12 +413,14 @@ class SearchService
                                 foreach ($searchValueSet as $searchKey => $searchValue) {
                                     $searchValue = $this->setBoostVal($searchValue);
                                     if (!empty($searchValue)) {
-                                        $this->params['body']['query']['bool']['should'][] = [$searchType => [
-                                            $searchKey => [
-                                                'query' => $searchValue,
-                                                'boost' => $this->boost
+                                        $search[] = [
+                                            $searchType => [
+                                                $searchKey => [
+                                                    'query' => $searchValue,
+                                                    'boost' => $this->boost
+                                                ]
                                             ]
-                                        ]];
+                                        ];
                                     }
                                 }
                             }
@@ -426,12 +434,22 @@ class SearchService
                                     if (empty($data)) {
                                         continue;
                                     }
-                                    $this->params['body']['query']['bool']['should']['bool']['filter'][] = $data;
+                                    $filter[] = $data;
                                 }
+                            } else {
+                                $data = $this->setInterval($filterKey, $filterValue);
+                                if (empty($data)) {
+                                    continue;
+                                }
+                                $filter[] = $data;
                             }
                         }
                         break;
                 }
+            }
+            if (!empty($search)) {
+                $this->params['body']['query']['bool']['should'] = $search;
+                $this->params['body']['query']['bool']['should'][]['bool']['filter'] = $filter;
             }
         }
     }
@@ -457,7 +475,7 @@ class SearchService
         if (empty($shouldWhere)) {
             return $this;
         }
-        if (!isset($shouldWhere['search'], $shouldWhere['filter'])) {
+        if (!isset($shouldWhere['search']) && !isset($shouldWhere['filter'])) {
             throw new \RuntimeException('Not found search or filter');
         }
         $this->shouldWhere = $shouldWhere;
@@ -559,9 +577,8 @@ class SearchService
      */
     protected function replaceSpecialChar(string $content): string
     {
-        $special = (string)"/\/|\～|\，|\。|\！|\？|\“|\”|\【|\】|\『|\』|\：|\；|\《|\》|\’|\‘|\ |\·|\~|\!|\@|\#|\\$|\%|\^|\&|\*|\(|\)|\_|\+|\{|\}|\:|\<|\>|\?|\[|\]|\,|\.|\/|\;|\'|\`|\-|\=|\\\|\|\ʚ/";
-        $content = preg_replace($special, "", $content);
-        return htmlspecialchars($content, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+        $replace = array('◆','♂','）','=','+','$','￥bai','-','、','、','：',';','！','!','/');
+        return str_replace($replace, '', $content);
     }
 
     /**
