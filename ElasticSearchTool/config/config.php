@@ -1,12 +1,12 @@
 <?php
 return [
 	'elasticsearch' => [
-		'index' => 'fx_test',
-		'prefix' => 'fx_',
+		'index' => env('ELASTICSEARCH_PREFIX', 'fx_'),
+		'prefix' => env('ELASTICSEARCH_PREFIX', 'fx_'),
 		'hosts' => [
-			'http://localhost',
+			env('ELASTICSEARCH_HOST', 'http://localhost'),
 		],
-		'analyzer' => 'ik_max_word',
+		'analyzer' => env('ELASTICSEARCH_ANALYZER', 'ik_max_word'),
 		'settings' => [],
 		'filter' => [
 			'+',
@@ -28,4 +28,5 @@ return [
 			'?',
 			':'
 		]
-	]];
+	]
+];
