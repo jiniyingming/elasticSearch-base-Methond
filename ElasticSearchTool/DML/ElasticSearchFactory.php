@@ -167,6 +167,27 @@ class ElasticSearchFactory
 	}
 
 	/**
+	 * @param $sortScript
+	 * @return $this
+	 * 按指定数值进行排序值计算
+	 */
+	public function sortMath($sortScript,$sort = 'desc')
+	{
+		$this->sort = [
+			'_script' => [
+				'type' => 'number',
+				'script' => [
+					'lang' => 'painless',
+					'inline' => implode('', $sortScript)
+				],
+				'order' => $sort
+			]
+		];
+		return $this;
+
+	}
+
+	/**
 	 * 输出完整 数据JSON
 	 * @throws JsonException
 	 */
