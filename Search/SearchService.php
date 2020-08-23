@@ -69,6 +69,8 @@ class SearchService
      */
     private $boost = 1;
 
+	protected $distinctField;
+
     /**
      * SearchService constructor.
      * @param array $conf 实例化
@@ -99,8 +101,7 @@ class SearchService
         if (empty($aggi)) {
             return $this;
         }
-        if($this->aggiData)
-        {
+		if ($this->aggiData) {
             throw new \RuntimeException('aggs already exists');
         }
         $this->aggiData = $aggi;
@@ -110,13 +111,13 @@ class SearchService
     /**
      * @param string $field
      * @param int $returnCount
-     * @return $this
+	 * @param array $_source
+	 * @return $this 简单分组查询
      * 简单分组查询
      */
-    public function groupBy(string $field,$returnCount = 10): SearchService
+	public function groupBy(string $field, $returnCount = 10, array $_source = []): self
     {
         $this->aggiData = [
-            'group_by_'.$field=>[
                 "group_by_{$field}_list" => array(
                     "terms" => array(
                         "field" => $field,
@@ -125,12 +126,13 @@ class SearchService
                     "aggs" => array(
                         'my_top_hits' => array(
                             "top_hits" => array(
+							"_source" => $_source,
                                 "size" => 1
                             )
                         )
                     )
                 )
-            ]
+
         ];
         return $this;
     }
@@ -244,7 +246,7 @@ class SearchService
     /**
      * @var array 最终组装的结果集
      */
-    protected $params = [];
+	public $params = [];
 
     /**
      * @return array
@@ -264,6 +266,9 @@ class SearchService
         if ($this->_source) {
             $this->params['body']['_source'] = $this->_source;
         }
+		if(!empty($this->distinctField)){
+		    $this->params['body']['collapse']['field'] = $this->distinctField;
+        }
         //搜索条件
         //query string 搜索方式
         $this->setQueryParams();
@@ -275,6 +280,7 @@ class SearchService
         $this->setNotParams();
         //必须筛选项
         $this->setMustParams();
+		$this->setMustShouldParams();
         //聚合数组组装
         if ($this->aggiData) {
             $this->params['body']['aggs'] = $this->aggiData;
@@ -308,6 +314,17 @@ class SearchService
         '<=' => 'lte',
     ];
 
+	/**
+	 * @param array $val
+	 * @return $this
+	 * 自定义搜索结构条件
+	 */
+	public function setMustCustomizeParams(array $val): self
+	{
+		$this->params['body']['query']['bool']['must'][]['bool']['filter'][] = $val;
+		return $this;
+	}
+
     /**
      * @param $filterField
      * @param $filterData
@@ -321,6 +338,7 @@ class SearchService
         }
         $type = 'term';
         if (is_array($filterData)) {
+
             $type = 'terms';
             $filter = [$type => [$filterField => $filterData]];
             if (count($filterData) === 2 && is_string($filterData[0]) && isset($this->intervalMapping[$filterData[0]])) {
@@ -331,6 +349,31 @@ class SearchService
         }
         return $filter;
     }
+
+	/**
+	 * @param array $params
+	 * @return $this
+	 * 搜索格式：['price'=>[['>=',10],['<',12]]]
+	 * 设置区间条件
+	 */
+	public function between(array $params): self
+	{
+		try {
+			foreach ($params as $field => $param) {
+				$intervalMapping = $this->intervalMapping;
+				$range = [];
+				array_map(static function ($val) use ($intervalMapping, $field, &$range) {
+					[$sign, $item] = $val;
+					$range[$field][$intervalMapping[$sign]] = $item;
+				}, $param);
+				$this->params['body']['query']['bool']['must'][]['bool']['filter'][]['range'] = $range;
+			}
+		} catch (\Exception $exception) {
+			throw new \RuntimeException("参数格式有误 eg: ['price'=>[['>=',10],['<',12]]]");
+
+		}
+		return $this;
+	}
 
     /**
      * 设置并条件信息集
@@ -388,22 +431,19 @@ class SearchService
                 //boost 对于单个字段的查询结果设置权重值 默认唯一
                 $word = $this->setBoostVal($word);
                 if (is_string($word) && !empty($word)) {
-                    $should[] = [
+					$this->params['body']['query']['bool']['must'][] = [
                         $matchType => [
                             $field => ['query' => $word, 'boost' => $this->boost]
                         ]
                     ];
                 }
             }
-            if ($should) {
-                $this->params['body']['query']['bool']['must'] = $should;
                 //设置最少匹配数量 暂时弃用
 //                if ($this->minimum_should_match > 0) {
 //                    $this->params['body']['query']['bool']['minimum_should_match'] = $this->minimum_should_match;
 //                }
             }
         }
-    }
 
     /**
      * @param $searchValue
@@ -415,10 +455,9 @@ class SearchService
         if (is_array($searchValue)) {
             if (count($searchValue) === 2) {
                 [$searchValue, $this->boost] = $searchValue;
-            }else{
+			} else {
                 $key = array_key_first($searchValue);
-                if(is_string($key))
-                {
+				if (is_string($key)) {
                     $searchValue = $this->setBoostVal($searchValue[$key]);
                 }
             }
@@ -426,22 +465,9 @@ class SearchService
         return $this->checkKeyword($searchValue);
     }
 
-    /**
-     * 设置 OR 筛选项
-     * search 搜索词项 设计拆词查询 词权重处理
-     * filter 不涉及分词拆词 单纯筛选
-     */
-    private function setShouldParams(): void
+	private function setSearchParams(array $searchValueSet, string $searchType): array
     {
-
-        if (!empty($this->shouldWhere)) {
             $search = [];
-            $filter = [];
-            foreach ($this->shouldWhere as $shouldType => $shouldParams) {
-                switch ($shouldType) {
-                    case 'search':
-                        foreach ($shouldParams as $searchType => $searchValueSet) {
-                            if (in_array($searchType, ['match', 'match_phrase']) && is_array($searchValueSet)) {
                                 foreach ($searchValueSet as $searchKey => $searchValue) {
                                     $searchValue = $this->setBoostVal($searchValue);
                                     if (!empty($searchValue)) {
@@ -455,12 +481,78 @@ class SearchService
                                         ];
                                     }
                                 }
+		return $search;
+
+	}
+
+	/**
+	 * 设置 OR 筛选项
+	 * search 搜索词项 设计拆词查询 词权重处理
+	 * filter 不涉及分词拆词 单纯筛选
+	 */
+	private function setShouldParams(): void
+	{
+
+		if (!empty($this->shouldWhere)) {
+			list($search,$filter) = $this->setMatchFilter($this->shouldWhere);
+
+			if (!empty($search)) {
+				$this->params['body']['query']['bool']['should'] = $search;
+			}
+			if (!empty($filter)) {
+				$this->params['body']['query']['bool']['should'][]['bool']['filter'] = $filter;
+			}
+		}
+	}
+
+	private $mustShouldWhere;
+
+	public function mustShould(array $where)
+    {
+	    $this->mustShouldWhere = $where;
+	    return $this;
+    }
+	/**
+	 * 设置 OR 筛选项
+	 * search 搜索词项 设计拆词查询 词权重处理
+	 * filter 不涉及分词拆词 单纯筛选
+	 */
+	private function setMustShouldParams(): void
+	{
+
+		if (!empty($this->mustShouldWhere)) {
+			list($search,$filter) = $this->setMatchFilter($this->mustShouldWhere);
+			if (!empty($search)) {
+				$this->params['body']['query']['bool']['must'][]['bool']['should'] = $search;
+			}
+			if (!empty($filter)) {
+//                $this->params['body']['query']['bool']['must']['bool']['should'][]['bool']['filter'] = $filter; ;
+				$this->params['body']['query']['bool']['must']['bool']['should'][]['bool']['filter'] = $filter;
+			}
+		}
+	}
+
+	private function setMatchFilter(array $where_set):array
+	{
+		$search = [];
+		$filter = [];
+		foreach ($where_set as $mustShouldType => $mustShouldParams) {
+			switch ($mustShouldType) {
+				case 'search':
+					foreach ($mustShouldParams as $searchType => $searchValueSet) {
+						if (is_array($searchValueSet)) {
+							if (in_array($searchType, ['match', 'match_phrase'], true)) {
+								$search[] = $this->setSearchParams($searchValueSet, $searchType);
+							}
+							if (in_array(array_key_first($searchValueSet), ['match', 'match_phrase'], true)) {
+								$search[] = $searchValueSet;
+							}
                             }
                         }
                         break;
                     case 'filter':
-                        foreach ($shouldParams as $filterKey => $filterValue) {
-                            if (is_array($filterValue)) {
+					foreach ($mustShouldParams as $filterKey => $filterValue) {
+						if (is_array($filterValue) && $this->array_depth($filterValue) > 1) {
                                 foreach ($filterValue as $field => $item) {
                                     $data = $this->setInterval($field, $item);
                                     if (empty($data)) {
@@ -479,12 +571,25 @@ class SearchService
                         break;
                 }
             }
-            if (!empty($search)) {
-                $this->params['body']['query']['bool']['should'] = $search;
-                $this->params['body']['query']['bool']['should'][]['bool']['filter'] = $filter;
+		return [$search, $filter];
             }
+
+	private function array_depth($array): int
+	{
+		if (!is_array($array)) {
+			return 0;
+		}
+		$max_depth = 1;
+		foreach ($array as $value) {
+			if (is_array($value)) {
+				$depth = $this->array_depth($value) + 1;
+				if ($depth > $max_depth) {
+					$max_depth = $depth;
         }
     }
+		}
+		return $max_depth;
+	}
 
     /**
      * @param array $shouldWhere
@@ -513,6 +618,23 @@ class SearchService
         $this->shouldWhere = $shouldWhere;
         return $this;
     }
+
+	public function distinct(string $field)
+    {
+        $this->distinctField = $field;
+        return $this;
+    }
+
+	/**
+	 * @param array $val
+	 * @return $this
+	 * 自定义 或条件
+	 */
+	public function setShouldCustomizeParams(array $val): self
+	{
+		$this->params['body']['query']['bool']['should'][] = $val;
+		return $this;
+	}
 
     /**
      * @param array $keywordArray
@@ -607,9 +729,10 @@ class SearchService
      * @return string
      * 过滤特殊字符
      */
-    protected function replaceSpecialChar(string $content): string
+	protected function replaceSpecialChar(string $content)
     {
-        $replace = array('◆','♂','）','=','+','$','￥bai','-','、','、','：',';','！','!','/');
+	    return $content;
+		$replace = array('◆', '♂', '）', '=', '+', '$', '￥bai', '-', '、', '、', '：', ';', '！', '!', '/');
         return str_replace($replace, '', $content);
     }
 
@@ -646,8 +769,7 @@ class SearchService
     public function __call($method, $arguments)
     {
         if (method_exists($this->client, $method)) {
-            !isset($arguments['index']) && $arguments['index'] = $this->index;
-            !isset($arguments['type']) && $arguments['type'] = $this->type;
+
             return call_user_func_array(array($this->client, $method), $arguments);
         }
         return [];
@@ -680,4 +802,16 @@ class SearchService
         return $response['_source'];
     }
 
+	/**
+	 * @param $array
+	 * @param $key
+	 * @return array
+	 * @internal
+	 */
+	private function array_pluck($array, $key): array
+	{
+		return array_map(static function ($v) use ($key) {
+			return is_object($v) ? $v->$key : $v[$key];
+		}, $array);
+}
 }
