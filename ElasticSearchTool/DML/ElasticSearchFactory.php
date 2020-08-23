@@ -1,10 +1,16 @@
 <?php
-
+/**
+ * @noinspection ALL
+ * 搜索基础
+ */
 
 namespace App\Libs\ElasticSearchTool\DML;
 
-
+use App\Libs\ElasticSearchTool\helper\HelperTool;
 use Elasticsearch\Client;
+use exception;
+use JsonException;
+use RuntimeException;
 
 class ElasticSearchFactory
 {
@@ -48,7 +54,7 @@ class ElasticSearchFactory
 	/**
 	 * @var null 设置返回字段 默认不返回
 	 */
-	private $_source = null;
+	private $_source;
 	/**
 	 * @var int 字段最小匹配数量
 	 */
@@ -99,7 +105,7 @@ class ElasticSearchFactory
 			return $this;
 		}
 		if ($this->aggiData) {
-			throw new \RuntimeException('aggs already exists');
+			throw new RuntimeException('aggs already exists');
 		}
 		$this->aggiData = $aggi;
 		return $this;
@@ -162,10 +168,11 @@ class ElasticSearchFactory
 
 	/**
 	 * 输出完整 数据JSON
+	 * @throws JsonException
 	 */
 	public function outPutJson(): void
 	{
-		exit(json_encode($this->setParams(), JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
+		exit(json_encode($this->setParams(), JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
 	}
 
 	/**
@@ -207,8 +214,8 @@ class ElasticSearchFactory
 	public function offset(int $page = 1, int $limit = 10): ElasticSearchFactory
 	{
 		$page = $page <= 0 ? 1 : $page;
-		$this->pageSize = (int)$limit;
-		$this->offset = (int)($limit * ($page - 1));
+		$this->pageSize = $limit;
+		$this->offset = ($limit * ($page - 1));
 		return $this;
 	}
 
@@ -277,6 +284,7 @@ class ElasticSearchFactory
 		$this->setNotParams();
 		//必须筛选项
 		$this->setMustParams();
+		//--必须 包含 或 条件
 		$this->setMustShouldParams();
 		//聚合数组组装
 		if ($this->aggiData) {
@@ -365,8 +373,8 @@ class ElasticSearchFactory
 				}, $param);
 				$this->params['body']['query']['bool']['must'][]['bool']['filter'][]['range'] = $range;
 			}
-		} catch (\Exception $exception) {
-			throw new \RuntimeException("参数格式有误 eg: ['price'=>[['>=',10],['<',12]]]");
+		} catch (Exception $exception) {
+			throw new RuntimeException("参数格式有误 eg: ['price'=>[['>=',10],['<',12]]]");
 
 		}
 		return $this;
@@ -378,16 +386,12 @@ class ElasticSearchFactory
 	private function setMustParams(): void
 	{
 		if ($this->isMustData) {
-			$filter = [];
 			foreach ($this->isMustData as $field => $word) {
 				$data = $this->setInterval($field, $word);
 				if (empty($data)) {
 					continue;
 				}
-				$filter[] = $data;
-			}
-			if ($filter) {
-				$this->params['body']['query']['bool']['must'][]['bool']['filter'] = $filter;
+				$this->params['body']['query']['bool']['must'][]['bool']['filter'][] = $data;
 			}
 		}
 	}
@@ -423,7 +427,6 @@ class ElasticSearchFactory
 			if ($this->isFuzzy === true) {
 				$matchType = 'match';//分词查询
 			}
-			$should = [];
 			foreach ($this->mathWhere as $field => $word) {
 				//boost 对于单个字段的查询结果设置权重值 默认唯一
 				$word = $this->setBoostVal($word);
@@ -504,7 +507,7 @@ class ElasticSearchFactory
 
 	private $mustShouldWhere;
 
-	public function mustShould(array $where)
+	public function mustShould(array $where): ElasticSearchFactory
 	{
 		$this->mustShouldWhere = $where;
 		return $this;
@@ -524,7 +527,6 @@ class ElasticSearchFactory
 				$this->params['body']['query']['bool']['must'][]['bool']['should'] = $search;
 			}
 			if (!empty($filter)) {
-//                $this->params['body']['query']['bool']['must']['bool']['should'][]['bool']['filter'] = $filter; ;
 				$this->params['body']['query']['bool']['must']['bool']['should'][]['bool']['filter'] = $filter;
 			}
 		}
@@ -550,7 +552,7 @@ class ElasticSearchFactory
 					break;
 				case 'filter':
 					foreach ($mustShouldParams as $filterKey => $filterValue) {
-						if (is_array($filterValue) && $this->array_depth($filterValue) > 1) {
+						if (is_array($filterValue) && HelperTool::array_depth($filterValue) > 1) {
 							foreach ($filterValue as $field => $item) {
 								$data = $this->setInterval($field, $item);
 								if (empty($data)) {
@@ -570,23 +572,6 @@ class ElasticSearchFactory
 			}
 		}
 		return [$search, $filter];
-	}
-
-	private function array_depth($array): int
-	{
-		if (!is_array($array)) {
-			return 0;
-		}
-		$max_depth = 1;
-		foreach ($array as $value) {
-			if (is_array($value)) {
-				$depth = $this->array_depth($value) + 1;
-				if ($depth > $max_depth) {
-					$max_depth = $depth;
-				}
-			}
-		}
-		return $max_depth;
 	}
 
 	/**
@@ -611,13 +596,13 @@ class ElasticSearchFactory
 			return $this;
 		}
 		if (!isset($shouldWhere['search']) && !isset($shouldWhere['filter'])) {
-			throw new \RuntimeException('Not found search or filter');
+			throw new RuntimeException('Not found search or filter');
 		}
 		$this->shouldWhere = $shouldWhere;
 		return $this;
 	}
 
-	public function distinct(string $field)
+	public function distinct(string $field): ElasticSearchFactory
 	{
 		$this->distinctField = $field;
 		return $this;
@@ -691,7 +676,7 @@ class ElasticSearchFactory
 	{
 		$result = $this->getSearchResult();
 		$returnData = [
-			'list' => array_pluck($result['hits']['hits'], '_source'),
+			'list' => HelperTool::array_pluck($result['hits']['hits'], '_source'),
 			'total' => (int)$result['hits']['total'],
 			'groupList' => []
 		];
@@ -700,7 +685,7 @@ class ElasticSearchFactory
 
 			$bucketName = array_key_first($bucketSet);
 			$bucketChildName = array_key_first($this->aggiData[$bucketName]['aggs']);
-			$bucketList = array_pluck($result['aggregations'][$bucketName]['buckets'], $bucketChildName);
+			$bucketList = HelperTool::array_pluck($result['aggregations'][$bucketName]['buckets'], $bucketChildName);
 			$data = [];
 			$count = 1;
 			foreach ($bucketList as $item) {
@@ -722,41 +707,6 @@ class ElasticSearchFactory
 		return $returnData;
 	}
 
-	/**
-	 * @param string $content
-	 * @return string
-	 * 过滤特殊字符
-	 */
-	protected function replaceSpecialChar(string $content)
-	{
-		return $content;
-		$replace = array('◆', '♂', '）', '=', '+', '$', '￥bai', '-', '、', '、', '：', ';', '！', '!', '/');
-		return str_replace($replace, '', $content);
-	}
-
-	/**
-	 * @param      $data
-	 * @param null $_id
-	 * @return object
-	 * 更新方法
-	 */
-	public function update($data, $_id = NULL)
-	{
-		$parameters = [
-			"id" => $_id,
-			"body" => ['doc' => $data],
-		];
-
-		if ($index = $this->index) {
-			$parameters["index"] = $index;
-		}
-
-		if ($type = $this->type) {
-			$parameters["type"] = $type;
-		}
-
-		return (object)$this->client->update($parameters);
-	}
 
 	/**
 	 * @param $method
@@ -793,23 +743,12 @@ class ElasticSearchFactory
 		}
 		try {
 			$response = $this->client->get($params);
-		} catch (\exception $e) {
+		} catch (exception $e) {
 			return [];
 		}
 		$response['_source']['id'] = $response['_id'];
 		return $response['_source'];
 	}
 
-	/**
-	 * @param $array
-	 * @param $key
-	 * @return array
-	 * @internal
-	 */
-	private function array_pluck($array, $key): array
-	{
-		return array_map(static function ($v) use ($key) {
-			return is_object($v) ? $v->$key : $v[$key];
-		}, $array);
-	}
+
 }

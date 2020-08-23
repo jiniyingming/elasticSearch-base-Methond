@@ -1,5 +1,6 @@
 {
-    "require": {
-        "elasticsearch/elasticsearch": "6.0"
-    }
+  "require": {
+    "elasticsearch/elasticsearch": "6.0",
+    "ext-json": "*"
+  }
 }

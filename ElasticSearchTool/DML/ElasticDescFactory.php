@@ -50,4 +50,26 @@ class ElasticDescFactory
 		}
 		return false;
 	}
+
+	/**
+	 * @param      $data
+	 * @param null $_id
+	 * @param string $index
+	 * @return array
+	 * 更新方法
+	 */
+	public function update($data, $_id, string $index): array
+	{
+		$parameters = [
+			"id" => $_id,
+			"body" => ['doc' => $data],
+		];
+
+		if ($index) {
+			$parameters["index"] = $index;
+		}
+
+
+		return self::$client->update($parameters);
+	}
 }

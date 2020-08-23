@@ -39,4 +39,46 @@ class HelperTool
 		return $val;
 	}
 
+	/**
+	 * @param $array
+	 * @param $key
+	 * @return array
+	 * @internal
+	 */
+	public static function array_pluck($array, $key): array
+	{
+		return array_map(static function ($v) use ($key) {
+			return is_object($v) ? $v->$key : $v[$key];
+		}, $array);
+	}
+
+	/**
+	 * @param string $content
+	 * @return string
+	 * 过滤特殊字符
+	 */
+	public static function replaceSpecialChar(string $content): string
+	{
+		return $content;
+		$replace = array('◆', '♂', '）', '=', '+', '$', '￥bai', '-', '、', '、', '：', ';', '！', '!', '/');
+		return str_replace($replace, '', $content);
+	}
+
+	public static function array_depth($array): int
+	{
+		if (!is_array($array)) {
+			return 0;
+		}
+		$max_depth = 1;
+		foreach ($array as $value) {
+			if (is_array($value)) {
+				$depth = self::array_depth($value) + 1;
+				if ($depth > $max_depth) {
+					$max_depth = $depth;
+				}
+			}
+		}
+		return $max_depth;
+	}
+
 }
