@@ -1,16 +1,12 @@
 <?php
-/** @noinspection ALL */
-namespace App\Services\Search;
 
-use Elasticsearch\Client, Elasticsearch\ClientBuilder, Exception;
-use RuntimeException;
 
-/**
- * Class SearchService
- * @package App\Services\Search
- * ElasticSearch 基础搜索方法使用模型
- */
-class SearchService
+namespace App\Libs\ElasticSearchTool\DML;
+
+
+use Elasticsearch\Client;
+
+class ElasticSearchFactory
 {
 	/**
 	 * @var mixed 索引 Index
@@ -52,7 +48,7 @@ class SearchService
 	/**
 	 * @var null 设置返回字段 默认不返回
 	 */
-	private $_source;
+	private $_source = null;
 	/**
 	 * @var int 字段最小匹配数量
 	 */
@@ -74,17 +70,17 @@ class SearchService
 
 	/**
 	 * SearchService constructor.
-	 * @param array $conf 实例化
-	 * @throws Exception
+	 * @param Client $client
 	 */
-	public function __construct(array $conf)
+	public function __construct(Client $client)
 	{
-		if (!isset($conf['index'], $conf['type'])) {
-			throw new RuntimeException('Index Or Type Not Found');
-		}
-		$this->index = $conf['index'];
-		$this->type = $conf['type'];
-		$this->client = ClientBuilder::create()->setHosts(config('scout.elasticsearch.hosts'))->build();
+		$this->client = $client;
+	}
+
+	public function setIndex(string $index): ElasticSearchFactory
+	{
+		$this->index = $index;
+		return $this;
 	}
 
 	/**
@@ -97,13 +93,13 @@ class SearchService
 	 * @return $this
 	 * 设置聚合
 	 */
-	public function aggs(array $aggi): self
+	public function aggs(array $aggi): ElasticSearchFactory
 	{
 		if (empty($aggi)) {
 			return $this;
 		}
 		if ($this->aggiData) {
-			throw new RuntimeException('aggs already exists');
+			throw new \RuntimeException('aggs already exists');
 		}
 		$this->aggiData = $aggi;
 		return $this;
@@ -116,7 +112,7 @@ class SearchService
 	 * @return $this 简单分组查询
 	 * 简单分组查询
 	 */
-	public function groupBy(string $field, $returnCount = 10, array $_source = []): self
+	public function groupBy(string $field, $returnCount = 10, array $_source = []): ElasticSearchFactory
 	{
 		$this->aggiData = [
 			"group_by_{$field}_list" => array(
@@ -143,7 +139,7 @@ class SearchService
 	 * @return $this
 	 * 是否模糊搜索 true 完全匹配 false 分词匹配
 	 */
-	public function isFuzzy(bool $isTrue = false): self
+	public function isFuzzy(bool $isTrue = false): ElasticSearchFactory
 	{
 		$this->isFuzzy = $isTrue;
 		return $this;
@@ -155,7 +151,7 @@ class SearchService
 	 * @return $this
 	 * 设置排序条件
 	 */
-	public function sort($data = null, string $sortType = 'desc'): self
+	public function sort($data = null, string $sortType = 'desc'): ElasticSearchFactory
 	{
 		if (empty($data)) {
 			return $this;
@@ -169,7 +165,7 @@ class SearchService
 	 */
 	public function outPutJson(): void
 	{
-		exit(json_encode($this->setParams(), JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
+		exit(json_encode($this->setParams(), JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
 	}
 
 	/**
@@ -178,7 +174,7 @@ class SearchService
 	 * @return $this
 	 * 搜索条件
 	 */
-	public function query($searchWord, array $queryField): self
+	public function query($searchWord, array $queryField): ElasticSearchFactory
 	{
 		$keyword = $this->checkKeyword($searchWord);
 		if (!empty($keyword)) {
@@ -193,7 +189,7 @@ class SearchService
 	 * @return $this
 	 * 去除条件
 	 */
-	public function isNot(array $notArray = []): self
+	public function isNot(array $notArray = []): ElasticSearchFactory
 	{
 		if (empty($notArray)) {
 			return $this;
@@ -208,11 +204,11 @@ class SearchService
 	 * @return $this
 	 * 设置分页
 	 */
-	public function offset(int $page = 1, int $limit = 10): self
+	public function offset(int $page = 1, int $limit = 10): ElasticSearchFactory
 	{
 		$page = $page <= 0 ? 1 : $page;
-		$this->pageSize = $limit;
-		$this->offset = ($limit * ($page - 1));
+		$this->pageSize = (int)$limit;
+		$this->offset = (int)($limit * ($page - 1));
 		return $this;
 	}
 
@@ -221,7 +217,7 @@ class SearchService
 	 * @return $this
 	 * 设置必须筛选项
 	 */
-	public function isMust(array $mustArray = []): self
+	public function isMust(array $mustArray = []): ElasticSearchFactory
 	{
 		if (empty($mustArray)) {
 			return $this;
@@ -235,7 +231,7 @@ class SearchService
 	 * @return $this
 	 * 设置返回字段
 	 */
-	public function _source(array $_source): self
+	public function _source(array $_source): ElasticSearchFactory
 	{
 		if (empty($_source)) {
 			return $this;
@@ -320,7 +316,7 @@ class SearchService
 	 * @return $this
 	 * 自定义搜索结构条件
 	 */
-	public function setMustCustomizeParams(array $val): self
+	public function setMustCustomizeParams(array $val): ElasticSearchFactory
 	{
 		$this->params['body']['query']['bool']['must'][]['bool']['filter'][] = $val;
 		return $this;
@@ -357,7 +353,7 @@ class SearchService
 	 * 搜索格式：['price'=>[['>=',10],['<',12]]]
 	 * 设置区间条件
 	 */
-	public function between(array $params): self
+	public function between(array $params): ElasticSearchFactory
 	{
 		try {
 			foreach ($params as $field => $param) {
@@ -370,7 +366,7 @@ class SearchService
 				$this->params['body']['query']['bool']['must'][]['bool']['filter'][]['range'] = $range;
 			}
 		} catch (\Exception $exception) {
-			throw new RuntimeException("参数格式有误 eg: ['price'=>[['>=',10],['<',12]]]");
+			throw new \RuntimeException("参数格式有误 eg: ['price'=>[['>=',10],['<',12]]]");
 
 		}
 		return $this;
@@ -508,7 +504,7 @@ class SearchService
 
 	private $mustShouldWhere;
 
-	public function mustShould(array $where): SearchService
+	public function mustShould(array $where)
 	{
 		$this->mustShouldWhere = $where;
 		return $this;
@@ -609,19 +605,19 @@ class SearchService
 	 *      'filter'=>['filter_key'=>'(int||string||array)filter_value'....]
 	 * ]
 	 */
-	public function shouldWhere(array $shouldWhere = []): self
+	public function shouldWhere(array $shouldWhere = []): ElasticSearchFactory
 	{
 		if (empty($shouldWhere)) {
 			return $this;
 		}
 		if (!isset($shouldWhere['search']) && !isset($shouldWhere['filter'])) {
-			throw new RuntimeException('Not found search or filter');
+			throw new \RuntimeException('Not found search or filter');
 		}
 		$this->shouldWhere = $shouldWhere;
 		return $this;
 	}
 
-	public function distinct(string $field): SearchService
+	public function distinct(string $field)
 	{
 		$this->distinctField = $field;
 		return $this;
@@ -632,7 +628,7 @@ class SearchService
 	 * @return $this
 	 * 自定义 或条件
 	 */
-	public function setShouldCustomizeParams(array $val): self
+	public function setShouldCustomizeParams(array $val): ElasticSearchFactory
 	{
 		$this->params['body']['query']['bool']['should'][] = $val;
 		return $this;
@@ -643,7 +639,7 @@ class SearchService
 	 * @return $this
 	 * 分词搜索  必须条件 and
 	 */
-	public function match(array $keywordArray = []): self
+	public function match(array $keywordArray = []): ElasticSearchFactory
 	{
 		if (empty($keywordArray)) {
 			return $this;
@@ -657,7 +653,7 @@ class SearchService
 	 * @return $this
 	 * 设置搜索匹配最小数量
 	 */
-	public function setMinimumMatch($number = 1): self
+	public function setMinimumMatch($number = 1): ElasticSearchFactory
 	{
 		$this->minimum_should_match = (int)$number;
 		return $this;
@@ -731,10 +727,9 @@ class SearchService
 	 * @return string
 	 * 过滤特殊字符
 	 */
-	protected function replaceSpecialChar(string $content): string
+	protected function replaceSpecialChar(string $content)
 	{
 		return $content;
-		/** @noinspection PhpUnreachableStatementInspection */
 		$replace = array('◆', '♂', '）', '=', '+', '$', '￥bai', '-', '、', '、', '：', ';', '！', '!', '/');
 		return str_replace($replace, '', $content);
 	}

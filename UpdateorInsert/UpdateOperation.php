@@ -14,6 +14,7 @@ use yii\helpers\ArrayHelper;
 use yii\helpers\Console;
 
 /**
+ * 适用于 Yii2
  * Class UpdateOperation
  * 更新操作
  * es 更新操作 应用于多语言版本操作的
