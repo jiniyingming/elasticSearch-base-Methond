@@ -44,6 +44,10 @@ class ElasticTool
 		return new ElasticDescFactory(self::$client);
 	}
 
+	/**
+	 * @return ElasticSearchFactory
+	 * 数据搜索方法
+	 */
 	public static function operationSearch(): ElasticSearchFactory
 	{
 		self::setClient();
