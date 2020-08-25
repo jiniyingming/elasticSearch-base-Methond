@@ -5,17 +5,17 @@ namespace App\Libs\ElasticSearchTool;
 use App\Libs\ElasticSearchTool\DDL\ElasticFactory;
 use App\Libs\ElasticSearchTool\DML\ElasticDescFactory;
 use App\Libs\ElasticSearchTool\DML\ElasticSearchFactory;
+use App\Libs\ElasticSearchTool\helper\ElasticInterface;
 use App\Libs\ElasticSearchTool\helper\HelperTool;
 use Elasticsearch\Client;
 use Elasticsearch\ClientBuilder;
 
-class ElasticTool
+class ElasticTool implements ElasticInterface
 {
 	/**
 	 * @var Client
 	 */
 	private static $client;
-
 	/**
 	 *
 	 */
@@ -35,23 +35,25 @@ class ElasticTool
 	}
 
 	/**
+	 * @param $index
 	 * @return ElasticDescFactory
 	 * 数据 Create, Update, Delete 操作
 	 */
-	public static function operationDesc(): ElasticDescFactory
+	public static function operationDesc($index): ElasticDescFactory
 	{
 		self::setClient();
-		return new ElasticDescFactory(self::$client);
+		return new ElasticDescFactory(self::$client,$index);
 	}
 
 	/**
+	 * @param $index
 	 * @return ElasticSearchFactory
-	 * 数据搜索方法
+	 * 数据搜索操作
 	 */
-	public static function operationSearch(): ElasticSearchFactory
+	public static function operationSearch($index): ElasticSearchFactory
 	{
 		self::setClient();
-		return new ElasticSearchFactory(self::$client);
+		return new ElasticSearchFactory(self::$client,$index);
 	}
 
 }

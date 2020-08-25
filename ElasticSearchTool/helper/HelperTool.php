@@ -11,6 +11,8 @@ use RuntimeException;
  */
 class HelperTool
 {
+	private static $config_set;
+
 	/**
 	 * @param string $key
 	 * @return mixed|null
@@ -18,9 +20,11 @@ class HelperTool
 	 */
 	public static function config(string $key)
 	{
-		$config = require __DIR__ . '/../config/config.php';
+		if (!self::$config_set) {
+			self::$config_set = require __DIR__ . '/../config/config.php';
+		}
 		$key_set = explode('.', $key);
-		return self::getKeyVal($config, $key_set);
+		return self::getKeyVal(self::$config_set, $key_set);
 	}
 
 	/**
@@ -84,7 +88,6 @@ class HelperTool
 		return $max_depth;
 	}
 
-
 	/**
 	 * @param array $math_set
 	 * @param float $relativity_per 相关度百分比
@@ -118,5 +121,35 @@ class HelperTool
 			$i++;
 		}
 		return $sortScript;
+	}
+
+
+	/**
+	 * @param $filename
+	 * @param $logOut
+	 * @param $type
+	 * 日志记录
+	 * @param null $path
+	 * @param bool $is_append
+	 */
+	public static function makeDir($filename, $logOut, $type, $path = null, $is_append = true): void
+	{
+		if ($path) {
+			$log_url = $path;
+		} else {
+			$log_url = __DIR__ . '../../../../../log/' . $type . '/' . date('Y-m-d') . '/';
+		}
+		if (!is_dir($log_url)) {
+			$damask = umask(0);
+			if (!mkdir($log_url, 0777, true) && !is_dir($log_url)) {
+				throw new \RuntimeException(sprintf('Directory "%s" was not created', $log_url));
+			}
+			umask($damask);
+		}
+		$flag = $is_append ? FILE_APPEND : 0;
+		if (is_array($logOut)) {
+			$logOut = (string)json_encode($logOut);
+		}
+		file_put_contents($log_url . $filename . '.log', $logOut . PHP_EOL, $flag);
 	}
 }

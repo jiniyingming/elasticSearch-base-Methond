@@ -7,12 +7,13 @@
 namespace App\Libs\ElasticSearchTool\DML;
 
 use App\Libs\ElasticSearchTool\helper\HelperTool;
+use App\Libs\ElasticSearchTool\Statistical\SearchStatisticalFactory;
 use Elasticsearch\Client;
 use exception;
 use JsonException;
 use RuntimeException;
 
-class ElasticSearchFactory
+class ElasticSearchFactory extends SearchStatisticalFactory
 {
 	/**
 	 * @var mixed 索引 Index
@@ -78,16 +79,15 @@ class ElasticSearchFactory
 	 * SearchService constructor.
 	 * @param Client $client
 	 */
-	public function __construct(Client $client)
+	public function __construct(Client $client, string $index)
 	{
+		if (!$index) {
+			throw new \http\Exception\RuntimeException('index not found');
+		}
 		$this->client = $client;
+		$this->index = $index;
 	}
 
-	public function setIndex(string $index): ElasticSearchFactory
-	{
-		$this->index = $index;
-		return $this;
-	}
 
 	/**
 	 * @var array 聚合查询信息集
@@ -204,8 +204,9 @@ class ElasticSearchFactory
 	 */
 	public function query($searchWord, array $queryField): ElasticSearchFactory
 	{
-		$keyword = $this->checkKeyword($searchWord);
+		$keyword = HelperTool::replaceSpecialChar($searchWord);
 		if (!empty($keyword)) {
+			$this->setSearchLogParams('query_string', $keyword, $queryField);
 			$this->searchWhere['query'] = $keyword;
 			$this->searchWhere['query_field'] = $queryField;
 		}
@@ -452,6 +453,7 @@ class ElasticSearchFactory
 				//boost 对于单个字段的查询结果设置权重值 默认唯一
 				$word = $this->setBoostVal($word);
 				if (is_string($word) && !empty($word)) {
+					$this->setSearchLogParams($matchType, $word, $field);
 					$this->params['body']['query']['bool']['must'][] = [
 						$matchType => [
 							$field => ['query' => $word, 'boost' => $this->boost]
@@ -459,6 +461,7 @@ class ElasticSearchFactory
 					];
 				}
 			}
+
 			//设置最少匹配数量 暂时弃用
 //                if ($this->minimum_should_match > 0) {
 //                    $this->params['body']['query']['bool']['minimum_should_match'] = $this->minimum_should_match;
@@ -483,7 +486,7 @@ class ElasticSearchFactory
 				}
 			}
 		}
-		return $this->checkKeyword($searchValue);
+		return HelperTool::replaceSpecialChar($searchValue);
 	}
 
 	private function setSearchParams(array $searchValueSet, string $searchType): array
@@ -492,6 +495,7 @@ class ElasticSearchFactory
 		foreach ($searchValueSet as $searchKey => $searchValue) {
 			$searchValue = $this->setBoostVal($searchValue);
 			if (!empty($searchValue)) {
+				$this->setSearchLogParams($searchType, $searchValue, $searchKey);
 				$search[] = [
 					$searchType => [
 						$searchKey => [
@@ -553,6 +557,11 @@ class ElasticSearchFactory
 		}
 	}
 
+	/**
+	 * @param array $where_set
+	 * @return array|array[]
+	 * 设置组装复杂条件
+	 */
 	private function setMatchFilter(array $where_set): array
 	{
 		$search = [];
@@ -666,47 +675,34 @@ class ElasticSearchFactory
 	}
 
 	/**
-	 * @param $word
-	 * @return mixed|string
-	 * 过滤特殊字符
-	 */
-	protected function checkKeyword($word)
-	{
-		return $word ? $this->replaceSpecialChar($word) : $word;
-	}
-
-	/**
 	 * @return array
 	 * 返回 Es 信息集
 	 */
 	public function getSearchResult(): array
 	{
 		$this->setParams();
-		return $this->client->search($this->params);
+		$data = $this->client->search($this->params);
+		$this->setSearchLog($data, $this->index);
+		return $data;
 	}
 
 	/**
+	 * @param $result_list
 	 * @return array
-	 * 获取搜索列表
-	 * return [
-	 * 'list' => array,
-	 * 'total' => int
-	 * ];
+	 * 设置列表
 	 */
-	public function getSearchList(): array
+	public function setSearchList($result_list)
 	{
-		$result = $this->getSearchResult();
 		$returnData = [
-			'list' => HelperTool::array_pluck($result['hits']['hits'], '_source'),
-			'total' => (int)$result['hits']['total'],
+			'list' => HelperTool::array_pluck($result_list['hits']['hits'], '_source'),
+			'total' => (int)$result_list['hits']['total'],
 			'groupList' => []
 		];
 		//---处理分组数据
-		if (isset($result['aggregations']) && $bucketSet = $result['aggregations']) {
-
+		if (isset($result_list['aggregations']) && $bucketSet = $result_list['aggregations']) {
 			$bucketName = array_key_first($bucketSet);
 			$bucketChildName = array_key_first($this->aggiData[$bucketName]['aggs']);
-			$bucketList = HelperTool::array_pluck($result['aggregations'][$bucketName]['buckets'], $bucketChildName);
+			$bucketList = HelperTool::array_pluck($result_list['aggregations'][$bucketName]['buckets'], $bucketChildName);
 			$data = [];
 			$count = 1;
 			foreach ($bucketList as $item) {
@@ -721,11 +717,25 @@ class ElasticSearchFactory
 					++$key;
 				}
 			}
-			if (empty($returnData['groupList'])) {
+			if (!empty($returnData['groupList'])) {
 				$returnData['groupList'] = array_chunk($data, $count);
 			}
 		}
 		return $returnData;
+	}
+
+	/**
+	 * @return array
+	 * 获取搜索列表
+	 * return [
+	 * 'list' => array,
+	 * 'total' => int
+	 * ];
+	 */
+	public function getSearchList(): array
+	{
+		$result = $this->getSearchResult();
+		return $this->setSearchList($result);
 	}
 
 
@@ -738,7 +748,6 @@ class ElasticSearchFactory
 	public function __call($method, $arguments)
 	{
 		if (method_exists($this->client, $method)) {
-
 			return call_user_func_array(array($this->client, $method), $arguments);
 		}
 		return [];

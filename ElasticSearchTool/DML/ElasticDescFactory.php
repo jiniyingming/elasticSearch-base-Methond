@@ -10,20 +10,24 @@ use http\Exception\RuntimeException;
 class ElasticDescFactory
 {
 	private static $client;
+	private $index;
 
 
-	public function __construct(Client $elasticTool)
+	public function __construct(Client $elasticTool, string $index)
 	{
+		if (!$index) {
+			throw new \http\Exception\RuntimeException('index not found');
+		}
+		$this->index = $index;
 		self::$client = $elasticTool;
 	}
 
 	/**
 	 * @param array $data
-	 * @param string $index
 	 * @return array|bool
 	 * 批量添加
 	 */
-	public function addAll(array $data, string $index)
+	public function addAll(array $data)
 	{
 		$params = [];
 		foreach ($data as $datum) {
@@ -32,7 +36,7 @@ class ElasticDescFactory
 			}
 			$params['body'][] = [
 				'index' => [
-					'_index' => $index
+					'_index' => $this->index
 				],
 				$datum
 			];
@@ -54,19 +58,18 @@ class ElasticDescFactory
 	/**
 	 * @param      $data
 	 * @param null $_id
-	 * @param string $index
 	 * @return array
 	 * 更新方法
 	 */
-	public function update($data, $_id, string $index): array
+	public function update($data, $_id): array
 	{
 		$parameters = [
 			"id" => $_id,
 			"body" => ['doc' => $data],
 		];
 
-		if ($index) {
-			$parameters["index"] = $index;
+		if ($this->index) {
+			$parameters["index"] = $this->index;
 		}
 
 
