@@ -60,7 +60,7 @@ Add elasticsearch/elasticsearch
 - 设置或条件 多个或条件 中必须有一项符合
 - 可同时设置搜索和筛选功能
 - 数据结构 eg:
-    ```php
+ ```php
         $whereArray = [
              'search'=>[
                          'match'=>[
@@ -121,6 +121,9 @@ Add elasticsearch/elasticsearch
 - 根据排序公式进行排序
 - 参数格式 (string,string)
 
+15.groupBy()
+- 聚合分组查询
+- 参数格式 (string,int,array)
 ```php
     $index = 'a_index';
     //---简单搜索 eg:
